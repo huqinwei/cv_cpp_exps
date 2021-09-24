@@ -1,0 +1,547 @@
+﻿#include <stdio.h>
+#include <stdlib.h> 
+#include <string>
+#include <vector>
+#include <memory>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <tchar.h>
+#include <windows.h>
+#include <ShlObj.h>
+#include "SimplygonSDKLoader.h"
+
+#ifndef _WIN64
+#error Simplygon only supports Windows x64 builds
+#endif
+
+#ifdef __cpp_lib_filesystem // Check for C++17 filesystem
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#ifndef _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#endif
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem::v1;
+#endif
+
+static std::vector<fs::path> AdditionalSearchPaths;
+
+using LPINITIALIZESIMPLYGONSDK = int (CALLBACK*)(const char* license_data, SimplygonSDK::ISimplygonSDK** pInterfacePtr);
+using LPDEINITIALIZESIMPLYGONSDK = void (CALLBACK*)();
+using LPGETINTERFACEVERSIONSIMPLYGONSDK = void (CALLBACK*)(char* deststring);
+using LPPOLLLOGSIMPLYGONSDK = int (CALLBACK*)(char* destbuffer, int max_length);
+
+namespace SimplygonSDK
+	{
+
+	static LPINITIALIZESIMPLYGONSDK InitializeSimplygonSDKPtr = nullptr; 
+	static LPDEINITIALIZESIMPLYGONSDK DeinitializeSimplygonSDKPtr = nullptr;
+	static LPGETINTERFACEVERSIONSIMPLYGONSDK GetInterfaceVersionSimplygonSDKPtr = nullptr;
+	static LPPOLLLOGSIMPLYGONSDK PollLogSimplygonSDKPtr = nullptr;
+	static HINSTANCE libHandle = nullptr; // Handle to SimplygonSDK DLL
+	static int LoadError = SG_ERROR_INVALIDPARAM; // if the load failed, this contains the error
+	static constexpr char SIMPLYGON_RELEASE_DLL[] = "SimplygonSDKRuntimeReleasex64.dll";
+	static constexpr char SIMPLYGON_DEBUGRELEASE_DLL[] = "SimplygonSDKRuntimeDebugReleasex64.dll";
+	static constexpr char SIMPLYGON_DEBUG_DLL[] = "SimplygonSDKRuntimeDebugx64.dll";
+	static constexpr char LICENSE_FILE_NAME[] = "Simplygon_8_license.dat";
+
+	static int GetStringFromRegistry( const std::string& keyid , const std::string& valueid , std::string& dest )
+		{
+		// read the value from the key
+		DWORD path_size = MAX_PATH;
+		auto temp = std::make_unique<char[]>(path_size);
+				
+		if(RegGetValueA(HKEY_LOCAL_MACHINE, keyid.c_str(), valueid.c_str(), REG_SZ,nullptr, (PVOID)temp.get(), &path_size) != ERROR_SUCCESS)
+			return SimplygonSDK::SG_ERROR_NOLICENSE;
+
+		dest.assign(temp.get(), path_size);
+
+		return SimplygonSDK::SG_ERROR_NOERROR;
+		}
+
+	static fs::path GetInstallationPath()
+		{
+
+		std::string InstallationPath;
+		if( GetStringFromRegistry( "Software\\DonyaLabs\\SimplygonSDK" , "InstallationPath" , InstallationPath ) != 0 )
+			return {""};
+
+		return { InstallationPath };
+		}
+	
+	//CSIDL_COMMON_APPDATA
+	//CSIDL_LOCAL_APPDATA
+	static fs::path GetSpecialFolder(int csidl)
+		{
+		char FolderPath[MAX_PATH];
+
+		// Get the common appdata path
+		if (SHGetFolderPathA(nullptr, csidl, nullptr, 0, FolderPath) != 0)
+			return { "" };
+
+		// append the path to Simplygon SDK
+		return  fs::path(FolderPath) / "Microsoft" / "SimplygonSDK";
+		}
+   
+	static fs::path GetApplicationPath()
+		{
+		char Path[MAX_PATH];
+		if( GetModuleFileNameA( nullptr , Path , MAX_PATH ) == 0 )
+			return { "" };
+
+		return fs::path(Path).parent_path();
+		}
+
+	static bool DynamicLibraryIsLoaded()
+		{
+		if(libHandle == nullptr)
+			return false;
+
+		return true;
+		}
+
+	static void UnloadDynamicLibrary()
+		{
+		if( !DynamicLibraryIsLoaded() )
+			return;
+		
+		FreeLibrary(libHandle);
+		libHandle = nullptr;	
+
+		InitializeSimplygonSDKPtr = nullptr;
+		DeinitializeSimplygonSDKPtr = nullptr;
+		GetInterfaceVersionSimplygonSDKPtr = nullptr;
+		PollLogSimplygonSDKPtr = nullptr;
+		}
+
+	static bool LoadOSLibrary( const fs::path& lib_path )
+		{
+		// if no file exists, just return
+		if( !fs::exists(lib_path) )
+			{
+			LoadError = SG_ERROR_FILENOTFOUND;
+			return false;
+			}
+		
+		// get the lib directory, it should be initialized in its directory
+		auto lib_dir = lib_path.parent_path();
+		auto curr_dir = fs::current_path();
+
+		// move to the dir where the library is 
+		SetCurrentDirectoryA( lib_dir.u8string().c_str() );
+
+		// try loading the library
+		libHandle = LoadLibraryA(lib_path.u8string().c_str() );
+
+		// move back to the previous dir
+		SetCurrentDirectoryA( curr_dir.u8string().c_str() );
+
+		// now, check if the library was loaded
+		if( !DynamicLibraryIsLoaded() || libHandle == nullptr )
+			{
+			// load failed, probably a missing dependency
+			DWORD err = GetLastError();
+			std::stringstream buffer;
+			buffer << "Loading the Simplygon DLL failed, which is in most cases because of a missing dependency, are all dependencies installed? Please try reinstalling Simplygon. GetLastError returns << " << err << std::endl;
+			OutputDebugStringA(buffer.str().c_str());
+			// set the error
+			LoadError = SimplygonSDK::SG_ERROR_LOADFAILED;
+			return false;
+			}
+
+		// setup the pointers
+		InitializeSimplygonSDKPtr = (LPINITIALIZESIMPLYGONSDK)GetProcAddress(libHandle,"InitializeSimplygonSDK");
+		DeinitializeSimplygonSDKPtr = (LPDEINITIALIZESIMPLYGONSDK)GetProcAddress(libHandle,"DeinitializeSimplygonSDK");
+		GetInterfaceVersionSimplygonSDKPtr = (LPGETINTERFACEVERSIONSIMPLYGONSDK)GetProcAddress(libHandle,"GetInterfaceVersionSimplygonSDK");
+		PollLogSimplygonSDKPtr = (LPPOLLLOGSIMPLYGONSDK)GetProcAddress(libHandle,"PollLogSimplygonSDK");
+		if( InitializeSimplygonSDKPtr==nullptr || 
+			DeinitializeSimplygonSDKPtr==nullptr ||
+			GetInterfaceVersionSimplygonSDKPtr==nullptr )
+			{
+			// load failed, invalid version
+			std::stringstream buffer;
+			buffer << "The Simplygon DLL loaded, but the .dll functions could not be retrieved, this is probably not a Simplygon dll file, or it is corrupted. Please reinstall Simplygon" << std::endl;
+			OutputDebugStringA(buffer.str().c_str());
+			// set error
+			LoadError = SimplygonSDK::SG_ERROR_WRONGVERSION;
+			UnloadDynamicLibrary();
+			return false;
+			}
+
+		// check the version string
+		char versionstring[200];
+		GetInterfaceVersionSimplygonSDKPtr( versionstring );
+		std::string  header_version(SimplygonSDK::GetInterfaceVersionHash());
+		
+		std::stringstream buffer;
+		if(header_version != versionstring)
+			{
+			// load failed, invalid version		
+			buffer << "The Simplygon DLL loaded, but the interface version of the header is not the same as the library." << std::endl
+				<< "\tHeader : " << header_version << std::endl
+				<< "\tLibrary: " << versionstring << std::endl;
+			OutputDebugStringA(buffer.str().c_str());
+			LoadError = SimplygonSDK::SG_ERROR_WRONGVERSION;
+			UnloadDynamicLibrary();
+			return false;
+			}
+
+		// loaded successfully
+		buffer << "The Simplygon DLL was found and loaded successfully!" << std::endl << "\tDLL path: " << lib_path << std::endl << "\tInterface hash: " << versionstring << std::endl;
+		OutputDebugStringA(buffer.str().c_str());
+		LoadError = SimplygonSDK::SG_ERROR_NOERROR;
+		return true;
+		}
+
+	static bool FindNamedDynamicLibrary( const std::string& DLLName )
+		{
+		auto dllSearchPaths = AdditionalSearchPaths;
+		dllSearchPaths.emplace_back(GetInstallationPath());
+		dllSearchPaths.emplace_back(GetApplicationPath());
+		dllSearchPaths.emplace_back(fs::current_path());
+		// try additional paths first, so they are able to override
+		for (const auto& path : dllSearchPaths)
+			{
+			if (!path.empty() && LoadOSLibrary(path / DLLName))
+				return true;
+			}		
+
+		std::stringstream buffer;
+		buffer << "Could not find Simplygon DLL ("<< DLLName <<") in search paths:" << std::endl;
+		for (const auto& dir : dllSearchPaths)
+			buffer << dir.u8string() << std::endl;
+		OutputDebugStringA(buffer.str().c_str());
+		return false;
+		}
+
+	static bool LoadDynamicLibrary(const fs::path& SDKPath)
+		{
+		LoadError = SimplygonSDK::SG_ERROR_NOERROR;
+
+		std::vector<std::string> DLLNames = { SIMPLYGON_RELEASE_DLL , SIMPLYGON_DEBUGRELEASE_DLL , SIMPLYGON_DEBUG_DLL };
+
+#ifdef _DEBUG
+		std::reverse(std::begin(DLLNames), std::end(DLLNames));
+#endif
+
+#ifdef REDEBUG
+		std::swap(DLLNames[1], DLLNames[0]);
+#endif
+		
+
+		// load from explicit place, fail if not found
+		if (!SDKPath.empty())
+			{
+			if (LoadOSLibrary(SDKPath))
+				return true;
+
+			LoadError = SimplygonSDK::SG_ERROR_FILENOTFOUND;
+			return false;
+			}
+
+		for (auto& DLLName : DLLNames)
+			{
+			if (FindNamedDynamicLibrary(DLLName))
+				return true;
+			}
+		
+		LoadError = SimplygonSDK::SG_ERROR_FILENOTFOUND;
+		return false;
+		}
+
+	static fs::path FindNamedProcess( const std::string& EXEName )
+		{
+		auto InstallationPath = GetInstallationPath();
+		auto ApplicationPath = GetApplicationPath();	//these would point to the same location
+		auto WorkingPath = fs::current_path();	//these would point to the same location
+
+		// order of running batch process
+		std::vector<fs::path> dirs = {
+			ApplicationPath,
+			InstallationPath,
+			WorkingPath,
+			};
+
+		// try the different paths
+		for (auto& dir : dirs)
+			{
+			if (fs::is_empty(dir))
+				continue;
+
+			auto testPath = dir / EXEName;
+			if (fs::exists(testPath))
+				return testPath;
+			}
+		
+		return {""};
+		}
+
+	// executes the batch process. redirects the stdout to the handle specified
+	// places the handle of the process into the variable that phProcess points at
+	static bool ExecuteProcess( const std::string& exepath , const std::string& ini_file , HANDLE *phProcess )
+		{
+		PROCESS_INFORMATION piProcInfo = {0};
+		STARTUPINFOA siStartInfo = {0};
+		BOOL bFuncRetn = FALSE; 
+
+		// Set up members of the PROCESS_INFORMATION structure. 
+		ZeroMemory( &piProcInfo, sizeof(PROCESS_INFORMATION) );
+
+		// Set up members of the STARTUPINFO structure. 
+		ZeroMemory( &siStartInfo, sizeof(STARTUPINFOA) );
+		siStartInfo.cb = sizeof(STARTUPINFOA); 
+
+		// create a command line string
+		std::string tmp_cmdline = exepath + " " + ini_file;
+
+		// Create the child process. 
+		bFuncRetn = CreateProcessA(
+			tmp_cmdline.c_str(),	// exe file path
+			nullptr,				// command line 
+			nullptr,          		// process security attributes 
+			nullptr,          		// primary thread security attributes 
+			TRUE,          			// handles are inherited 
+			0,             			// creation flags 
+			nullptr,          		// use parent's environment 
+			nullptr,          		// use parent's current directory 
+			&siStartInfo,  			// STARTUPINFO pointer 
+			&piProcInfo				// receives PROCESS_INFORMATION 
+		);
+
+		if(bFuncRetn == 0) 
+			return false;
+
+		// function succeeded, return handle to process, release handles we will not use anymore
+		*phProcess = piProcInfo.hProcess;
+		CloseHandle(piProcInfo.hThread);
+		return true;
+		}
+
+	// waits for process to end, and returns exit value
+	// the process handle is also released by the function
+	static DWORD WaitForProcess( HANDLE &hProcess )
+		{
+		DWORD exitcode;
+
+		for(;;)
+			{
+			// check if process has ended
+			GetExitCodeProcess( hProcess , &exitcode );
+			if( exitcode != STILL_ACTIVE )
+				break;
+
+			// wait for it to signal. 
+			WaitForSingleObject( hProcess , 1000 );
+			}
+
+		CloseHandle(hProcess);
+		hProcess = INVALID_HANDLE_VALUE;
+		return exitcode;
+		}
+
+	static bool ReadLicense(const fs::path& LicensePath, std::string& License)
+		{
+		License.clear();
+		if (!fs::exists(LicensePath))
+			return false;
+
+		std::ifstream filestream(LicensePath);
+
+		if (!filestream.is_open())
+			return false;
+
+		filestream.seekg(0, std::ios::end);
+		auto len = static_cast<size_t>(filestream.tellg());
+		License.reserve(len);
+		filestream.seekg(0, std::ios::beg);
+		License.assign(std::istreambuf_iterator<char>(filestream), std::istreambuf_iterator<char>());
+
+		filestream.close();
+		return true;
+		}	
+
+	static bool LoadLicense(std::string &lic )
+		{
+		std::vector <fs::path> licenseSearchPaths = AdditionalSearchPaths;
+		licenseSearchPaths.emplace_back(GetApplicationPath());
+		licenseSearchPaths.emplace_back(GetSpecialFolder(CSIDL_COMMON_APPDATA));
+		licenseSearchPaths.emplace_back(GetSpecialFolder(CSIDL_LOCAL_APPDATA));
+		licenseSearchPaths.emplace_back(GetInstallationPath());
+
+		for (const auto& dir : licenseSearchPaths)
+			{
+			auto LicensePath = dir / LICENSE_FILE_NAME;
+			if (ReadLicense(LicensePath, lic))
+				return true;
+			}
+
+		std::stringstream buffer;
+		buffer << "Could not find license file (" << LICENSE_FILE_NAME << ") in search paths:" << std::endl;
+		for (const auto& dir : licenseSearchPaths)
+			buffer << dir.u8string() << std::endl;
+		OutputDebugStringA(buffer.str().c_str());
+		return false;
+		}
+
+	int InitializeSimplygonSDK( SimplygonSDK::ISimplygonSDK **pInterfacePtr , const char* SDKPath , const char* LicenseDataText)
+		{
+		if (!SDKPath)
+			SDKPath = {""};
+		// load the library
+		
+		if( !LoadDynamicLibrary(SDKPath) )
+			return LoadError;
+
+		// read the license file from the installation path
+		std::string lic;
+		if( LicenseDataText )
+			{
+			lic.assign(LicenseDataText);
+			}
+		else
+			{
+			if (!LoadLicense(lic))
+				return SimplygonSDK::SG_ERROR_NOLICENSE;
+			}
+
+		// initialization
+		int retval = InitializeSimplygonSDKPtr(lic.c_str(),pInterfacePtr);
+		if( retval == 0 )
+			{
+			std::stringstream buffer;
+			buffer << "Simplygon initialized and running" << std::endl << "\tVersion: " << (*pInterfacePtr)->GetVersion() << std::endl;
+			OutputDebugStringA(buffer.str().c_str());
+			}
+				
+		return retval;
+		}
+
+	void DeinitializeSimplygonSDK()
+		{
+		if( !DynamicLibraryIsLoaded() )
+			return;
+
+		DeinitializeSimplygonSDKPtr();
+		UnloadDynamicLibrary();
+		}
+
+	////////////////////////////////////////////////////////////////////////////////////
+
+
+	static int init_count = 0; // a reference count of the number of Init/Deinits
+	static ISimplygonSDK *InterfacePtr; // the pointer to the only interface
+
+	void AddSearchPath( const char* search_path )
+		{
+		fs::path temp_path{search_path};
+		AdditionalSearchPaths.emplace_back(fs::absolute(temp_path));
+		}
+
+	void ClearAdditionalSearchPaths()
+		{
+		AdditionalSearchPaths.clear();
+		}
+
+	int Initialize( ISimplygonSDK **pInterfacePtr , const char* SDKPath , const char* LicenseDataText)
+		{
+		int retval = SG_ERROR_NOERROR;
+
+		// if the interface does not exist, init it
+		if( InterfacePtr == nullptr )
+			{
+			init_count = 0;
+			retval = InitializeSimplygonSDK( &InterfacePtr , SDKPath , LicenseDataText);
+			}
+
+		// if everything is ok, add a reference
+		if( retval == SG_ERROR_NOERROR )
+			{
+			++init_count;
+			*pInterfacePtr = InterfacePtr;
+			}
+
+		return retval;
+		}
+
+	void Deinitialize()
+		{
+		// release a reference
+		--init_count;
+
+		// if the reference is less or equal to 0, release the interface 
+		if( init_count <= 0 )
+			{
+			// only release if one exists
+			if( InterfacePtr != nullptr )
+				{
+				DeinitializeSimplygonSDK();
+				InterfacePtr = nullptr;
+				}
+
+			// make sure the init_count is 0
+			init_count = 0;
+			}
+		}
+
+	LPCSTR GetError( int error_code )
+		{
+		switch( error_code ) 
+			{
+			case SG_ERROR_NOERROR:
+				return "No error";
+			case SG_ERROR_NOLICENSE:
+				return "No license was found, or the license is not valid. Please install a valid license.";
+			case SG_ERROR_NOTINITIALIZED:
+				return "The SDK is not initialized, or no process object is loaded.";
+			case SG_ERROR_ALREADYINITIALIZED:
+				return "The SDK is already initialized. Please call Deinitialize() before calling Initialize() again.";
+			case SG_ERROR_FILENOTFOUND:
+				return "The specified file was not found.";
+			case SG_ERROR_INVALIDPARAM:
+				return "An invalid parameter was passed to the method";
+			case SG_ERROR_WRONGVERSION:
+				return "The Simplygon DLL and header file interface versions do not match";
+			case SG_ERROR_LOADFAILED:
+				return "the Simplygon DLL failed loading, probably because of a missing dependency";
+			case SG_ERROR_LICENSE_WRONGAPPLICATION:
+				return "the license is not made for this application of Simplygon";
+			case SG_ERROR_LICENSE_WRONGPLATFORM:
+				return "the license is not made for this platform of Simplygon";
+			case SG_ERROR_LICENSE_WRONGVERSION:
+				return "the license is not made for this version of Simplygon";
+			default:
+				return "Extended Internal Error Code. Contact support@simplygon.com for help";
+			}
+		}
+
+
+	int PollLog(char* dest , int max_len_dest )
+		{
+		if( dest == nullptr || max_len_dest == 0 || PollLogSimplygonSDKPtr == nullptr)
+			return 0;
+
+		auto sz = PollLogSimplygonSDKPtr(dest,max_len_dest);
+		return sz;
+		}
+
+	int RunLicenseWizard(const char* batch_file )
+		{
+		// find process
+		auto licenseApplicationPath = FindNamedProcess( "LicenseApplication.exe" );
+		if(licenseApplicationPath.empty() )
+			return SG_ERROR_FILENOTFOUND;
+
+		// run process
+		HANDLE hProcess;
+		bool succ = ExecuteProcess(licenseApplicationPath.u8string().c_str(),batch_file,&hProcess);
+		if( !succ )
+			return SG_ERROR_LOADFAILED;
+
+		// wait for it to end
+		return WaitForProcess(hProcess);
+		}
+
+	// end of namespace
+	}

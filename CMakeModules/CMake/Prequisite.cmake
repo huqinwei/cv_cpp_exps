@@ -1,0 +1,77 @@
+
+set(CV_CPP_EXPS_BIN_DIR    ${CV_CPP_EXPS_DIR}Bin)
+set(CV_CPP_EXPS_LIB_DIR    ${CV_CPP_EXPS_DIR}Lib)
+
+set(CV_CPP_EXPS_THIRDPARTY_DIR ${CV_CPP_EXPS_DIR}/Externals)
+
+option(CV_CPP_EXPS_RELEASEWITHDEBUG_ENABLED "enable releasewith debug" ON)  #CHY 提测时需改为OFF
+if(WIN32)
+ if(CV_CPP_EXPS_RELEASEWITHDEBUG_ENABLED)
+		set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
+ 		set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF") 
+		set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF")
+	 endif(CV_CPP_EXPS_RELEASEWITHDEBUG_ENABLED)
+endif(WIN32)
+#add_definitions(-DUNICODE -D_UNICODE)
+add_definitions(-D_SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS)
+
+if (WIN32)
+        if (${CMAKE_SIZEOF_VOID_P} MATCHES "8") 
+            set(CV_CPP_EXPS_PLATFORM_NAME x64)
+            add_definitions(-DWIN64)
+        else (${CMAKE_SIZEOF_VOID_P} MATCHES "8")
+            set(CV_CPP_EXPS_PLATFORM_NAME Win32)
+            add_definitions(-DWIN32)
+        endif(${CMAKE_SIZEOF_VOID_P} MATCHES "8")
+else()
+        if (${CMAKE_SIZEOF_VOID_P} MATCHES "8") 
+            set(CV_CPP_EXPS_PLATFORM_NAME x64)
+        else (${CMAKE_SIZEOF_VOID_P} MATCHES "8")
+            set(CV_CPP_EXPS_PLATFORM_NAME x86)
+        endif(${CMAKE_SIZEOF_VOID_P} MATCHES "8")
+endif()
+
+
+set(CMAKE_RELEASE_POSTFIX "")
+set(CMAKE_DEBUG_POSTFIX "d")
+
+
+
+include(ThirdpartyPathList)
+
+
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+
+set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "" FORCE)
+
+### 设置输出路径，CMake会自动在后面添加Configuration名称
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY
+    ${LIB_OUTPUT_PATH} CACHE
+    PATH "Directory where all the .lib files are dumped." FORCE)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY
+    ${EXEC_OUTPUT_PATH} CACHE
+    PATH "Directory where .so and .dll files are dumped." FORCE)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
+    ${EXEC_OUTPUT_PATH} CACHE
+    PATH "Directory where .exe and .dll files are dumped." FORCE)
+
+include_directories(
+    ${CV_CPP_EXPS_THIRDPARTY_DIR}
+)
+
+
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/${CV_CPP_EXPS_TEST_TARGETDIR}/Lib/${CV_CPP_EXPS_PLATFORM_NAME})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/${CV_CPP_EXPS_TEST_TARGETDIR}/Bin/${CV_CPP_EXPS_PLATFORM_NAME})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/${CV_CPP_EXPS_TEST_TARGETDIR}/Bin/${CV_CPP_EXPS_PLATFORM_NAME})
+
+
+link_directories(${CMAKE_ARCHIVE_OUTPUT_DIRECTORY} )
+
+#endif(APPLE)
+if(WIN32)
+link_directories(   
+    ${CV_CPP_EXPS_LIB_DIR}/$(Platform)
+   
+)
+endif(WIN32)

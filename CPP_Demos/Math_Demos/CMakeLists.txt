@@ -1,5 +1,5 @@
 
-set(TARGET_NAME Demos2)
+set(TARGET_NAME Math_Demos)
 
 ############################### GRAB HEADERS #####################################
 FILE(GLOB HEADER_LIST RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} 
@@ -30,4 +30,4 @@ set(DEPENDS_LIBS ${CV_CPP_EXPS_BOOST_LIB} ${CV_CPP_EXPS_OPENMESH_LIB}    )
 
 add_executable(${TARGET_NAME}  ${SRC_FILES} )
 target_link_libraries(${TARGET_NAME}  PUBLIC 	${DEPENDS_LIBS}	)
-set_target_properties(${TARGET_NAME} PROPERTIES  FOLDER "CV_Demos")
+set_target_properties(${TARGET_NAME} PROPERTIES  FOLDER "CPP_Demos")

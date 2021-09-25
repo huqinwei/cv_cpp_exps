@@ -3,7 +3,7 @@ IF(USE_QT)
 # Qt
 # ------------------------------------------------------------------------------
 ## we will use cmake automoc feature
-set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOMOC OFF)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 set( QT5_ROOT_PATH CACHE PATH "Qt5 root directory (i.e. where the 'bin' folder lies)" )

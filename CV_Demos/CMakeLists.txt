@@ -4,8 +4,8 @@ if(EXISTS  ${CMAKE_CURRENT_SOURCE_DIR}/Demos1)
 endif()
 
 
-if(EXISTS  ${CMAKE_CURRENT_SOURCE_DIR}/Demos2)
-	add_subdirectory(Demos2)
+if(EXISTS  ${CMAKE_CURRENT_SOURCE_DIR}/Opencv_Basic)
+	add_subdirectory(Opencv_Basic)
 endif()
 
 

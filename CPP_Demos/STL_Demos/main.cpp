@@ -1,28 +1,14 @@
-/*
-	*Entrance to tile node segmentation progress.
-	*Build quadtree by node segmentation.
-	*author:hqw
-*/
+
+
+#include "vector_demo.h"
 
 #include <iostream>
-#include <fstream>
-
-#include <boost/program_options.hpp>
 
 
-
-#define TEST_NODE_SEGMENTATION
-
-int main()
-{
-	bool hello = false;
-
-	hello = true;
-	int i;
-	bool b;
+int main() {
 
 
-	std::cout << hello << std::endl;
+	vector_lifetime_test();
 	return 0;
 
 }

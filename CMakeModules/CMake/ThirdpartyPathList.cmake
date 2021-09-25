@@ -179,7 +179,8 @@ set(CV_CPP_EXPS_GFLAGS_INCLUDE_PATH   ${GFLAGS_ROOT_DIR}/include)
   add_definitions(-DCV_CPP_EXPS_GFLAGS_NAMESPACE=${GFLAGS_NAMESPACE})
 	endfunction()
 ENDIF(USE_GFLAGS)
-    # BOOST	
+
+# BOOST	
 SET(USE_BOOST ON)
 IF(USE_BOOST)
 set(BOOST_VERSION_STRING 1_71)
@@ -392,12 +393,14 @@ IF(USE_OSG)
 		set(CV_CPP_EXPS_OSG_LIB_365 "")
  	foreach(COMPONENT ${OSG_FIND_COMPONENTS})
 		set(CV_CPP_EXPS_OSG_LIB_365 ${CV_CPP_EXPS_OSG_LIB_365} 
-		debug ${COMPONENT}d${LIB_POSTFIX}
-		optimized ${COMPONENT}${LIB_POSTFIX}
-#		MESSAGE("!!!!!!CV_CPP_EXPS_OSG_LIB_365 COMPONENT:debug- ${COMPONENT}d${LIB_POSTFIX}---")
-#		MESSAGE("!!!!!!CV_CPP_EXPS_OSG_LIB_365 COMPONENT:optimized- ${COMPONENT}${LIB_POSTFIX}---")
+			debug ${COMPONENT}d${LIB_POSTFIX}
+			optimized ${COMPONENT}${LIB_POSTFIX}
+		#MESSAGE("!!!!!!CV_CPP_EXPS_OSG_LIB_365 COMPONENT:debug- ${COMPONENT}d${LIB_POSTFIX}---")
+		#MESSAGE("!!!!!!CV_CPP_EXPS_OSG_LIB_365 COMPONENT:optimized- ${COMPONENT}${LIB_POSTFIX}---")
+		
 		)
 	endforeach()
+		#MESSAGE("####@@@!!!CV_CPP_EXPS_OSG_LIB_365:${CV_CPP_EXPS_OSG_LIB_365}")
 	
 	endif(WIN32)
 
@@ -410,8 +413,6 @@ ENDIF(USE_OSG)
 	
 
 
-	
-	
 
 
 	#GLEW
@@ -736,7 +737,8 @@ ENDIF(USE_ZLIB)
 #OPENCV
 SET(USE_OPENCV ON)
 IF(USE_OPENCV)
-	set(OPENCV_VERSION 347)
+	#set(OPENCV_VERSION 347)
+	set(OPENCV_VERSION 342)#×Ô±àÒëµÄ£¬ÓÐxfeatures2d
 	set(OPENCV_ROOT_DIR   ${TP_ROOT}/opencv/${OPENCV_VERSION})
 	set(CV_CPP_EXPS_OPENCV_INCLUDE_PATH	${OPENCV_ROOT_DIR}/include)
 	#set(OPENCV_FIND_COMPONENTS  features2d dnn ml  calib3d  stitching video videoio
@@ -745,9 +747,23 @@ IF(USE_OPENCV)
 	#
 	if(WIN32)
 	
+	
 		set(CV_CPP_EXPS_OPENCV_LIBRARY_PATH   ${OPENCV_ROOT_DIR}/lib/$(Platform))
-		 set(CV_CPP_EXPS_OPENCV_LIB debug opencv_world347d${LIB_POSTFIX}   
-				optimized opencv_world347${LIB_POSTFIX}) 
+		set(CV_CPP_EXPS_OPENCV_LIB debug opencv_world347d${LIB_POSTFIX}   	optimized opencv_world347${LIB_POSTFIX}) 
+	
+
+		set(OPENCV_FIND_COMPONENTS opencv_aruco342  opencv_bgsegm342  opencv_bioinspired342  opencv_calib3d342  opencv_ccalib342  opencv_core342  opencv_datasets342  opencv_dnn342  opencv_dnn_objdetect342  opencv_dpm342  opencv_face342  opencv_features2d342  opencv_flann342  opencv_fuzzy342  opencv_hfs342  opencv_highgui342  opencv_imgcodecs342  opencv_imgproc342  opencv_img_hash342  opencv_line_descriptor342  opencv_ml342  opencv_objdetect342  opencv_optflow342  opencv_phase_unwrapping342  opencv_photo342  opencv_plot342  opencv_reg342  opencv_rgbd342  opencv_saliency342  opencv_shape342  opencv_stereo342  opencv_stitching342  opencv_structured_light342  opencv_superres342  opencv_surface_matching342  opencv_text342  opencv_tracking342  opencv_video342  opencv_videoio342  opencv_videostab342  opencv_viz342  opencv_xfeatures2d342  opencv_ximgproc342  opencv_xobjdetect342  opencv_xphoto342                     )	
+#				
+		set(CV_CPP_EXPS_OPENCV_LIB_342 "")
+		foreach(COMPONENT ${OPENCV_FIND_COMPONENTS})
+			set(CV_CPP_EXPS_OPENCV_LIB_342 ${CV_CPP_EXPS_OPENCV_LIB_342} 
+				debug ${COMPONENT}d${LIB_POSTFIX}
+				optimized ${COMPONENT}${LIB_POSTFIX}
+		
+#		MESSAGE("!!!!!!CV_CPP_EXPS_OSG_LIB_365 COMPONENT:optimized- ${COMPONENT}${LIB_POSTFIX}---")
+		)
+		endforeach()
+		#MESSAGE("!!!!!!CV_CPP_EXPS_OPENCV_LIB_342  ${CV_CPP_EXPS_OPENCV_LIB_342}")
 	#
 	#	set(CV_CPP_EXPS_OPENCV_LIB "")
  	#	foreach(COMPONENT ${OPENCV_FIND_COMPONENTS})

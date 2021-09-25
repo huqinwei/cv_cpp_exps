@@ -9,20 +9,14 @@
 
 #include <boost/program_options.hpp>
 
+#include "file_system_demos.h"
 
-
-#define TEST_MODULE_A
+#define TEST_NODE_SEGMENTATION
 
 int main()
 {
-	bool hello = false;
+	boost_fs_demos_1();
 
-	hello = true;
-	int i;
-	bool b;
-
-
-	std::cout << hello << std::endl;
 	return 0;
 
 }
